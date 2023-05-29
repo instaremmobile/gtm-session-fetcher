@@ -13,6 +13,10 @@
  * limitations under the License.
  */
 
+#import <TargetConditionals.h>
+
+#if !TARGET_OS_WATCH
+
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
@@ -35,7 +39,7 @@
 // Using -[XCTestCase waitForExpectations...] methods will NOT wait for them.
 #define WAIT_FOR_START_STOP_NOTIFICATION_EXPECTATIONS()                                   \
   [self waitForExpectations:@[ fetcherStartedExpectation__, fetcherStoppedExpectation__ ] \
-                    timeout:5.0];
+                    timeout:10.0];
 
 @interface GTMSessionFetcherChunkedUploadTest : GTMSessionFetcherBaseTest
 @end
@@ -182,6 +186,24 @@ static const NSUInteger kBigUploadDataLength = 199000;
 - (NSMutableURLRequest *)validUploadFileRequest {
   NSString *validURLString = [self localURLStringToTestFileName:kGTMGettysburgFileName];
   validURLString = [validURLString stringByAppendingString:@".location"];
+  NSMutableURLRequest *request = [self requestWithURLString:validURLString];
+  [request setValue:@"UploadTest" forHTTPHeaderField:@"User-Agent"];
+  return request;
+}
+
+- (NSMutableURLRequest *)validUploadFileRequestWithParameters:(NSDictionary *)params {
+  NSString *validURLString = [self localURLStringToTestFileName:kGTMGettysburgFileName];
+  validURLString = [validURLString stringByAppendingString:@".location"];
+  // Add any parameters from the dictionary.
+  if (params.count) {
+    NSMutableArray *array = [NSMutableArray array];
+    for (NSString *key in params) {
+      [array addObject:[NSString stringWithFormat:@"%@=%@", key,
+                                                  [[params objectForKey:key] description]]];
+    }
+    NSString *paramsStr = [array componentsJoinedByString:@"&"];
+    validURLString = [validURLString stringByAppendingFormat:@"?%@", paramsStr];
+  }
   NSMutableURLRequest *request = [self requestWithURLString:validURLString];
   [request setValue:@"UploadTest" forHTTPHeaderField:@"User-Agent"];
   return request;
@@ -1344,7 +1366,9 @@ static void TestProgressBlock(GTMSessionUploadFetcher *fetcher, int64_t bytesSen
   CREATE_START_STOP_NOTIFICATION_EXPECTATIONS(5, 5);
   FetcherNotificationsCounter *fnctr = [[FetcherNotificationsCounter alloc] init];
 
-  NSURLRequest *request = [self validUploadFileRequest];
+  // Add a sleep on the server side during each chunk fetch, to ensure there is time to pause
+  // the fetcher before all chunk fetches complete.
+  NSURLRequest *request = [self validUploadFileRequestWithParameters:@{@"sleep" : @"0.2"}];
   NSData *bigData = [self bigUploadData];
   GTMSessionUploadFetcher *fetcher = [GTMSessionUploadFetcher uploadFetcherWithRequest:request
                                                                         uploadMIMEType:@"text/plain"
@@ -1403,7 +1427,9 @@ static void TestProgressBlock(GTMSessionUploadFetcher *fetcher, int64_t bytesSen
   CREATE_START_STOP_NOTIFICATION_EXPECTATIONS(5, 5);
   FetcherNotificationsCounter *fnctr = [[FetcherNotificationsCounter alloc] init];
 
-  NSURLRequest *request = [self validUploadFileRequest];
+  // Add a sleep on the server side during each chunk fetch, to ensure there is time to pause
+  // the fetcher before all chunk fetches complete.
+  NSURLRequest *request = [self validUploadFileRequestWithParameters:@{@"sleep" : @"0.2"}];
   NSData *bigData = [self bigUploadData];
   GTMSessionUploadFetcher *fetcher = [GTMSessionUploadFetcher uploadFetcherWithRequest:request
                                                                         uploadMIMEType:@"text/plain"
@@ -1612,3 +1638,5 @@ static void TestProgressBlock(GTMSessionUploadFetcher *fetcher, int64_t bytesSen
 }
 
 @end
+
+#endif  // !TARGET_OS_WATCH

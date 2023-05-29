@@ -13,19 +13,20 @@
  * limitations under the License.
  */
 
+#import <TargetConditionals.h>
+
+#if !TARGET_OS_WATCH
+
 #import <XCTest/XCTest.h>
-#import <stdlib.h>
-#import <sys/sysctl.h>
-#import <unistd.h>
+#include <stdlib.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
+
+#import <GTMSessionFetcher/GTMSessionFetcher.h>
+#import <GTMSessionFetcher/GTMSessionFetcherLogging.h>
+#import <GTMSessionFetcher/GTMSessionUploadFetcher.h>
 
 #import "GTMSessionFetcherTestServer.h"
-#if SWIFT_PACKAGE
-@import GTMSessionFetcherCore;
-#else
-#import "GTMSessionFetcher.h"
-#import "GTMSessionFetcherLogging.h"
-#import "GTMSessionUploadFetcher.h"
-#endif
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -38,9 +39,6 @@ extern NSString *const kGTMGettysburgFileName;
   NSTimeInterval _timeoutInterval;
   GTMSessionFetcherService *_fetcherService;
 }
-
-// A path to the test folder containing documents to be returned by the http server.
-- (NSString *)docRootPath;
 
 // Return the raw data of our test file.
 - (NSData *)gettysburgAddress;
@@ -73,7 +71,7 @@ extern NSString *const kGTMGettysburgFileName;
 @end
 
 // Authorization testing.
-@interface TestAuthorizer : NSObject <GTMFetcherAuthorizationProtocol>
+@interface TestAuthorizer : NSObject <GTMSessionFetcherAuthorizer>
 
 @property(atomic, assign, getter=isAsync) BOOL async;
 @property(atomic, assign, getter=isExpired) BOOL expired;
@@ -135,3 +133,5 @@ extern NSString *const kSubUIAppBackgroundTaskEnded;
 @end
 
 NS_ASSUME_NONNULL_END
+
+#endif  // !TARGET_OS_WATCH

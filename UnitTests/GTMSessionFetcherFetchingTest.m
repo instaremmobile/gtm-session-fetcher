@@ -13,6 +13,10 @@
  * limitations under the License.
  */
 
+#import <TargetConditionals.h>
+
+#if !TARGET_OS_WATCH
+
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
@@ -76,13 +80,11 @@ NSString *const kGTMGettysburgFileName = @"gettysburgaddress.txt";
   // During debugging of the unit tests, we want to avoid timeouts.
   _timeoutInterval = IsCurrentProcessBeingDebugged() ? 3600.0 : 30.0;
 
-  NSString *docRoot = [self docRootPath];
-
   // For tests that create fetchers without a fetcher service, _fetcherService will
   // be set to nil by the test.
   _fetcherService = [[GTMSessionFetcherService alloc] init];
 
-  _testServer = [[GTMSessionFetcherTestServer alloc] initWithDocRoot:docRoot];
+  _testServer = [[GTMSessionFetcherTestServer alloc] init];
   _isServerRunning = (_testServer != nil);
   XCTAssertTrue(_isServerRunning,
                 @">>> http test server failed to launch; skipping fetcher tests\n");
@@ -104,56 +106,8 @@ NSString *const kGTMGettysburgFileName = @"gettysburgaddress.txt";
 
 #pragma mark -
 
-- (NSString *)docRootPath {
-  // Make a path to the test folder containing documents to be returned by the http server.
-  NSBundle *testBundle = [NSBundle bundleForClass:[self class]];
-  XCTAssertNotNil(testBundle);
-
-#if SWIFT_PACKAGE
-  // Swift Pacage Manager does not support resources distribution currently,
-  // therefore the "gettysburgaddress.txt" file must be copied manually to the test bundle.
-  static dispatch_once_t onceToken;
-  dispatch_once(&onceToken, ^{
-    NSString *gettysburg =
-        @""
-         "Four score and seven years ago our fathers brought forth on this continent, a"
-         "new nation, conceived in liberty, and dedicated to the proposition that all men"
-         "are created equal.";
-
-    NSString *resourcePath = [testBundle resourcePath];
-    XCTAssertNotNil(resourcePath);
-
-    if (![[NSFileManager defaultManager] fileExistsAtPath:resourcePath]) {
-      NSError *createDirectoryError = nil;
-      if (![[NSFileManager defaultManager] createDirectoryAtPath:resourcePath
-                                     withIntermediateDirectories:true
-                                                      attributes:nil
-                                                           error:&createDirectoryError]) {
-        XCTFail("Failed to create the Resources directory, error: %@", createDirectoryError);
-      }
-    }
-
-    NSString *gettysburgPath =
-        [resourcePath stringByAppendingPathComponent:@"gettysburgaddress.txt"];
-    NSError *writeError = nil;
-    if (![gettysburg writeToFile:gettysburgPath
-                      atomically:true
-                        encoding:NSUTF8StringEncoding
-                           error:&writeError]) {
-      XCTFail("Failed to write `gettysburgaddress.txt` bundle Resource, error: %@", writeError);
-    }
-  });
-#endif
-
-  NSString *docFolder = [testBundle resourcePath];
-  return docFolder;
-}
-
 - (NSData *)gettysburgAddress {
-  // Return the raw data of our test file.
-  NSString *gettysburgPath = [_testServer localPathForFile:kGTMGettysburgFileName];
-  NSData *gettysburgAddress = [NSData dataWithContentsOfFile:gettysburgPath];
-  return gettysburgAddress;
+  return [_testServer documentDataAtPath:kGTMGettysburgFileName];
 }
 
 - (NSURL *)temporaryFileURLWithBaseName:(NSString *)baseName {
@@ -173,21 +127,6 @@ NSString *const kGTMGettysburgFileName = @"gettysburgaddress.txt";
 
 - (NSString *)localURLStringToTestFileName:(NSString *)name {
   NSString *localURLString = [[_testServer localURLForFile:name] absoluteString];
-
-  // Just for sanity, let's make sure we see the file locally, so
-  // we can expect the http server to find it too.
-  //
-  // We exclude parameters when looking for the file name locally.
-  NSRange range = [name rangeOfString:@"?"];
-  if (range.location != NSNotFound) {
-    name = [name substringToIndex:range.location];
-  }
-
-  NSString *filePath = [_testServer localPathForFile:name];
-
-  BOOL doesExist = [[NSFileManager defaultManager] fileExistsAtPath:filePath];
-  XCTAssertTrue(doesExist, @"Missing test file %@", filePath);
-
   return localURLString;
 }
 
@@ -1928,9 +1867,8 @@ NSString *const kGTMGettysburgFileName = @"gettysburgaddress.txt";
 - (void)testInsecureRequests {
   if (![GTMSessionFetcher appAllowsInsecureRequests]) return;
 
-  // file:///Users/.../Resources/gettysburgaddress.txt
-  NSString *fileURLString = [[NSURL
-      fileURLWithPath:[_testServer localPathForFile:kGTMGettysburgFileName]] absoluteString];
+  // file:///var/folders/...
+  NSString *fileURLString = [[NSURL fileURLWithPath:NSTemporaryDirectory()] absoluteString];
 
   // http://localhost:59757/gettysburgaddress.txt
   NSString *localhostURLString = [self localURLStringToTestFileName:kGTMGettysburgFileName];
@@ -1965,7 +1903,7 @@ NSString *const kGTMGettysburgFileName = @"gettysburgaddress.txt";
         testResponse(nil, [NSData data], nil);
       };
 
-  CREATE_START_STOP_NOTIFICATION_EXPECTATIONS(10, 10);
+  CREATE_START_STOP_NOTIFICATION_EXPECTATIONS(6, 6);
 
   for (int i = 0; records[i].urlString; i++) {
     NSString *urlString = records[i].urlString;
@@ -2864,8 +2802,7 @@ NSString *const kGTMGettysburgFileName = @"gettysburgaddress.txt";
 }
 
 - (void)authorizeRequest:(NSMutableURLRequest *)request
-                delegate:(id)delegate
-       didFinishSelector:(SEL)sel {
+       completionHandler:(void (^)(NSError *_Nullable))handler {
   NSError *error = nil;
   if (self.willFailWithError) {
     error = [NSError errorWithDomain:NSURLErrorDomain
@@ -2876,23 +2813,33 @@ NSString *const kGTMGettysburgFileName = @"gettysburgaddress.txt";
     [request setValue:value forHTTPHeaderField:@"Authorization"];
   }
 
+  if (self.async) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+      handler(error);
+    });
+  } else {
+    handler(error);
+  }
+}
+
+- (void)authorizeRequest:(NSMutableURLRequest *)request
+                delegate:(id)delegate
+       didFinishSelector:(SEL)sel {
   if (delegate && sel) {
-    id selfParam = self;
-    NSMethodSignature *sig = [delegate methodSignatureForSelector:sel];
-    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
-    [invocation setSelector:sel];
-    [invocation setTarget:delegate];
-    [invocation setArgument:&selfParam atIndex:2];
-    [invocation setArgument:&request atIndex:3];
-    [invocation setArgument:&error atIndex:4];
-    if (self.async) {
-      [invocation retainArguments];
-      dispatch_async(dispatch_get_main_queue(), ^{
-        [invocation invoke];
-      });
-    } else {
-      [invocation invoke];
-    }
+    __weak __typeof__(self) weakSelf = self;
+    [self authorizeRequest:request
+         completionHandler:^(NSError *_Nullable error) {
+           id selfParam = weakSelf;
+           NSMutableURLRequest *requestParam = request;
+           NSMethodSignature *sig = [delegate methodSignatureForSelector:sel];
+           NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
+           [invocation setSelector:sel];
+           [invocation setTarget:delegate];
+           [invocation setArgument:&selfParam atIndex:2];
+           [invocation setArgument:&requestParam atIndex:3];
+           [invocation setArgument:&error atIndex:4];
+           [invocation invoke];
+         }];
   }
 }
 
@@ -3195,9 +3142,7 @@ UIBackgroundTaskIdentifier gTaskID = 1000;
 - (void)uploadLocationObtained:(NSNotification *)note {
   if ([self shouldIgnoreNotification:note]) return;
 
-  GTMSessionUploadFetcher *fetcher = note.object;
-#pragma unused(fetcher)  // Unused when NS_BLOCK_ASSERTIONS
-
+  __unused GTMSessionUploadFetcher *fetcher = note.object;
   NSAssert(fetcher.uploadLocationURL != nil, @"missing upload location: %@", fetcher);
 
   ++_uploadLocationObtained;
@@ -3250,3 +3195,5 @@ static bool IsCurrentProcessBeingDebugged(void) {
 
   return result;
 }
+
+#endif  // !TARGET_OS_WATCH

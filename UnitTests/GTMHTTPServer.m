@@ -13,6 +13,10 @@
  * limitations under the License.
  */
 
+#import <TargetConditionals.h>
+
+#if !TARGET_OS_WATCH
+
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
@@ -22,9 +26,9 @@
 //  http://developer.apple.com/samplecode/CocoaHTTPServer/index.html
 //
 
-#import <netinet/in.h>
-#import <sys/socket.h>
-#import <unistd.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #define GTMHTTPSERVER_DEFINE_GLOBALS
 #import "GTMHTTPServer.h"
@@ -757,3 +761,5 @@ static void AcceptCallback(CFSocketRef socket, CFSocketCallBackType callBackType
 }
 
 @end
+
+#endif  // !TARGET_OS_WATCH
